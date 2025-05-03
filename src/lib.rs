@@ -9,7 +9,7 @@ use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 use core::num::{IntErrorKind, NonZeroUsize};
 use core::ops::{Add, AddAssign, Deref, DerefMut, Neg, Sub};
-use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Zero};
+use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Unsigned, Zero};
 
 extern crate alloc;
 
@@ -59,10 +59,10 @@ pub struct Car<V> {
 
 impl<V> Car<V>
 where
-    V: Zero,
+    V: One + Ord,
 {
     pub fn new(length: V, orientation: Orientation) -> Option<Self> {
-        if length.is_zero() {
+        if length < V::one() {
             None
         } else {
             Some(Self {
@@ -281,7 +281,7 @@ fn add_car_concrete<V>(
     car: &Car<V>,
 ) -> Result<(), InvalidStateError<V>>
 where
-    V: Copy + AddAssign + Zero + One,
+    V: Copy + AddAssign + Zero + One + Unsigned,
     usize: From<V>,
 {
     let mut base = *position;
@@ -324,7 +324,7 @@ where
 
 impl<V> State<V>
 where
-    V: Copy + AddAssign + Zero + One,
+    V: Copy + AddAssign + Zero + One + Unsigned,
     usize: From<V>,
 {
     fn concrete(&self) -> Result<Vec<Option<NonZeroUsize>>, InvalidStateError<V>> {
@@ -418,7 +418,7 @@ impl<V> Error for InvalidMoveError<V> where V: Debug + Display {}
 impl<R, V> Board<R, V>
 where
     R: DerefMut<Target = State<V>>,
-    V: Copy + AddAssign + Zero + One,
+    V: Copy + AddAssign + Zero + One + Unsigned,
     usize: From<V>,
 {
     pub fn add_car<P: Into<Position<V>>>(
@@ -437,7 +437,7 @@ where
 impl<R, V> Board<R, V>
 where
     R: DerefMut<Target = State<V>>,
-    V: Copy + CheckedAdd + CheckedSub + Zero + One,
+    V: Copy + CheckedAdd + CheckedSub + Zero + One + Unsigned,
     usize: From<V>,
 {
     pub fn shift_car(
