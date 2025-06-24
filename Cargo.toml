@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 license = "EUPL-1.2"
 
+description = "A recreation of the rules set for Thinkfun's \"Rush Hour\""
+homepage = "https://github.com/addisoncrump/parking-game"
+readme = "README.md"
+repository = "https://github.com/addisoncrump/parking-game"
+
 [dependencies]
 num-traits = "0.2"
 
