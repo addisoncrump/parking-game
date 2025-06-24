@@ -6,3 +6,6 @@ license = "EUPL-1.2"
 
 [dependencies]
 num-traits = "0.2"
+
+[lints.rust]
+missing-docs = "warn"

@@ -1,5 +1,15 @@
 // Copyright (c) Addison Crump, 2025, licensed under the EUPL-1.2-or-later.
 
+//! parking-game: a library recreating the rules of Thinkfun's "Rush Hour".
+//!
+//! This library implements the core movement rules of "Rush Hour", with a focus on memory and
+//! performance. The premise of the game is simple: you have one to many "cars" with fixed
+//! orientations (up/down or left/right) that can only move forwards and backwards in that
+//! orientation. You must move the designated car from its given start position to a desired end
+//! position by manipulating the other cars in the board. Cars may not intersect and they must stay
+//! within the bounds of the board. In this library, we only implement the _movement_ rules
+//! (intersection and bounds checks included); the gameplay is left to the user.
+
 #![no_std]
 
 use alloc::vec;
@@ -13,17 +23,25 @@ use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Unsigned, Zero};
 
 extern crate alloc;
 
+/// An orientation for a car.
 #[derive(Copy, Clone, Debug)]
 pub enum Orientation {
+    /// The car may only move up and down.
     UpDown,
+    /// The car may only move left and right.
     LeftRight,
 }
 
+/// A direction for a move. A direction may be flipped with [`Neg`] (i.e. `-`).
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Direction {
+    /// Upward movement.
     Up,
+    /// Downward movement.
     Down,
+    /// Leftward movement.
     Left,
+    /// Rightward movement.
     Right,
 }
 
@@ -51,6 +69,8 @@ impl Neg for Direction {
     }
 }
 
+/// A car, generic over the numeric type which backs it. The numeric type must be unsigned and
+/// integral.
 #[derive(Copy, Clone, Debug)]
 pub struct Car<V> {
     length: V,
@@ -61,6 +81,7 @@ impl<V> Car<V>
 where
     V: One + Ord,
 {
+    /// Create a new car of the provided length and orientation.
     pub fn new(length: V, orientation: Orientation) -> Option<Self> {
         if length < V::one() {
             None
@@ -73,6 +94,7 @@ where
     }
 }
 
+/// A position in the board (eff., a coordinate pair).
 #[derive(Copy, Clone, Debug)]
 pub struct Position<V> {
     row: V,
@@ -80,10 +102,12 @@ pub struct Position<V> {
 }
 
 impl<V> Position<V> {
+    /// The row of the position.
     pub fn row(&self) -> &V {
         &self.row
     }
 
+    /// The column of the position.
     pub fn column(&self) -> &V {
         &self.column
     }
@@ -156,6 +180,7 @@ where
     V: Copy,
     usize: From<V>,
 {
+    /// The position encoded as an index into an board with the provided dimensions.
     pub fn as_index(&self, dim: &Dimensions<V>) -> usize {
         let row = usize::from(self.row);
         let column = usize::from(self.column);
@@ -168,6 +193,8 @@ where
     Self: CheckedAdd<Output = Self> + CheckedSub<Output = Self>,
     V: Zero,
 {
+    /// Get the position `by` units away from this position in the provided direction `dir`, or
+    /// `None` if the position would be out of bounds.
     pub fn shift(&self, dir: Direction, by: V) -> Option<Self> {
         match dir {
             Direction::Up => self.checked_sub(&Self::from((by, V::zero()))),
@@ -184,12 +211,14 @@ impl<V> From<(V, V)> for Position<V> {
     }
 }
 
+/// The dimensions of a parking game board in terms of rows and columns.
 #[derive(Copy, Clone, Debug)]
 pub struct Dimensions<V> {
     rows: V,
     columns: V,
 }
 
+/// An error associated with the creation of the dimensions.
 #[derive(Debug)]
 pub struct DimensionError(IntErrorKind);
 
@@ -225,6 +254,8 @@ where
     }
 }
 
+/// A state of the game. This is guaranteed to be a valid state as long as it is constructed with
+/// [`State::empty`] and manipulated with via [`Board`] operations.
 #[derive(Clone, Debug)]
 pub struct State<V> {
     dim: Dimensions<V>,
@@ -232,6 +263,7 @@ pub struct State<V> {
 }
 
 impl<V> State<V> {
+    /// Produce an empty state (i.e., one with no cars) with the provided dimensions.
     pub fn empty<D: TryInto<Dimensions<V>>>(dim: D) -> Result<Self, D::Error> {
         let dim = dim.try_into()?;
         Ok(Self {
@@ -241,12 +273,16 @@ impl<V> State<V> {
     }
 }
 
+/// A type of invalid state, associated with an [`InvalidStateError`].
 #[derive(Debug)]
 pub enum InvalidStateType {
+    /// The car with the provided index is in an invalid position.
     InvalidPosition(NonZeroUsize),
+    /// The cars with the provided indices overlap.
     Overlap(NonZeroUsize, NonZeroUsize),
 }
 
+/// An error which denotes that an invalid state was encountered.
 #[derive(Debug)]
 pub struct InvalidStateError<V> {
     position: Position<V>,
@@ -341,6 +377,7 @@ where
         Ok(board)
     }
 
+    /// An immutable representation of the current board, or an error if this state is invalid.
     pub fn board(&self) -> Result<Board<&Self, V>, InvalidStateError<V>> {
         Ok(Board {
             concrete: self.concrete()?,
@@ -349,6 +386,7 @@ where
         })
     }
 
+    /// A mutable representation of the current board, or an error if this state is invalid.
     pub fn board_mut(&mut self) -> Result<Board<&mut Self, V>, InvalidStateError<V>> {
         Ok(Board {
             concrete: self.concrete()?,
@@ -358,6 +396,7 @@ where
     }
 }
 
+/// A concretised representation of the board.
 #[derive(Debug)]
 pub struct Board<R, V> {
     state: R,
@@ -366,6 +405,7 @@ pub struct Board<R, V> {
 }
 
 impl<R, V> Board<R, V> {
+    /// The [`Vec`] which represents the board literally.
     pub fn concrete(&self) -> &Vec<Option<NonZeroUsize>> {
         &self.concrete
     }
@@ -377,6 +417,9 @@ where
     V: Copy,
     usize: From<V>,
 {
+    /// Fetches the car index occupying the requested position. [`None`] if the position doesn't
+    /// exist in the board, [`Some`]`(`[`None`]`)` if the position exists, but is empty, and
+    /// [`Some`]`(`[`Some`]`(n))` with `n` as the car that occupies that position.
     pub fn get<P: Into<Position<V>>>(&self, position: P) -> Option<Option<NonZeroUsize>> {
         self.concrete
             .get(position.into().as_index(&self.state.dim))
@@ -384,14 +427,21 @@ where
     }
 }
 
+/// The type of invalid move that was observed in an [`InvalidMoveError`].
 #[derive(Debug)]
 pub enum InvalidMoveType<V> {
+    /// The car that was designated to be moved didn't exist.
     InvalidCar,
+    /// The direction that was used isn't valid for the provided car.
     InvalidDirection,
+    /// The final position of the car is out of bounds.
     InvalidFinalPosition,
+    /// After moving the car, the car would intersect another with the provided index at the
+    /// provided position.
     Intersects(Position<V>, NonZeroUsize),
 }
 
+/// An error which describes an attempted invalid move.
 #[derive(Debug)]
 pub struct InvalidMoveError<V> {
     car: NonZeroUsize,
@@ -421,6 +471,7 @@ where
     V: Copy + AddAssign + Zero + One + Unsigned,
     usize: From<V>,
 {
+    /// Add a car to the board, updating the backing state in the process.
     pub fn add_car<P: Into<Position<V>>>(
         &mut self,
         position: P,
@@ -440,6 +491,7 @@ where
     V: Copy + CheckedAdd + CheckedSub + Zero + One + Unsigned,
     usize: From<V>,
 {
+    /// Shift a provided car one space in the designated direction.
     pub fn shift_car(
         &mut self,
         car: NonZeroUsize,
