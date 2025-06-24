@@ -310,7 +310,7 @@ where
 impl<V> Error for InvalidStateError<V> where V: Debug + Display {}
 
 fn add_car_concrete<V>(
-    board: &mut Vec<Option<NonZeroUsize>>,
+    board: &mut [Option<NonZeroUsize>],
     idx: NonZeroUsize,
     dim: &Dimensions<V>,
     position: &Position<V>,
