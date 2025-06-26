@@ -16,15 +16,18 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt::{Debug, Display, Formatter};
+use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
 use core::num::{IntErrorKind, NonZeroUsize};
-use core::ops::{Add, AddAssign, Deref, DerefMut, Neg, Sub};
+use core::ops::{Add, AddAssign, Deref, DerefMut, Neg, Sub, SubAssign};
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Unsigned, Zero};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 extern crate alloc;
 
 /// An orientation for a car.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash, Deserialize, Serialize)]
 pub enum Orientation {
     /// The car may only move up and down.
     UpDown,
@@ -33,7 +36,7 @@ pub enum Orientation {
 }
 
 /// A direction for a move. A direction may be flipped with [`Neg`] (i.e. `-`).
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub enum Direction {
     /// Upward movement.
     Up,
@@ -69,17 +72,76 @@ impl Neg for Direction {
     }
 }
 
+/// Marker trait: specifies that a value may be used for board definitions.
+pub trait BoardValue:
+    One
+    + Ord
+    + Add<Output = Self>
+    + CheckedAdd
+    + Sub<Output = Self>
+    + CheckedSub
+    + AddAssign
+    + SubAssign
+    + Copy
+    + Into<usize>
+    + TryFrom<usize>
+    + Zero
+    + CheckedMul
+    + Debug
+    + Display
+    + Unsigned
+    + DeserializeOwned
+    + Serialize
+    + 'static
+{
+}
+
+impl<V> BoardValue for V where
+    V: One
+        + Ord
+        + Add<Output = Self>
+        + CheckedAdd
+        + Sub<Output = Self>
+        + CheckedSub
+        + AddAssign
+        + SubAssign
+        + Copy
+        + Into<usize>
+        + TryFrom<usize>
+        + Zero
+        + CheckedMul
+        + Debug
+        + Display
+        + Unsigned
+        + DeserializeOwned
+        + Serialize
+        + 'static
+{
+}
+
 /// A car, generic over the numeric type which backs it. The numeric type must be unsigned and
 /// integral.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash, Deserialize, Serialize)]
 pub struct Car<V> {
     length: V,
     orientation: Orientation,
 }
 
+impl<V> Car<V> {
+    /// The length of the car.
+    pub fn length(&self) -> &V {
+        &self.length
+    }
+
+    /// The orientation of the car.
+    pub fn orientation(&self) -> Orientation {
+        self.orientation
+    }
+}
+
 impl<V> Car<V>
 where
-    V: One + Ord,
+    V: BoardValue,
 {
     /// Create a new car of the provided length and orientation.
     pub fn new(length: V, orientation: Orientation) -> Option<Self> {
@@ -95,7 +157,7 @@ where
 }
 
 /// A position in the board (eff., a coordinate pair).
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash, Deserialize, Serialize)]
 pub struct Position<V> {
     row: V,
     column: V,
@@ -115,7 +177,7 @@ impl<V> Position<V> {
 
 impl<V> Add for Position<V>
 where
-    V: Add<Output = V>,
+    V: BoardValue,
 {
     type Output = Self;
 
@@ -129,7 +191,7 @@ where
 
 impl<V> CheckedAdd for Position<V>
 where
-    V: CheckedAdd<Output = V>,
+    V: BoardValue,
 {
     fn checked_add(&self, rhs: &Self) -> Option<Self> {
         Some(Self {
@@ -141,7 +203,7 @@ where
 
 impl<V> Sub for Position<V>
 where
-    V: Sub<Output = V>,
+    V: BoardValue,
 {
     type Output = Self;
 
@@ -155,7 +217,7 @@ where
 
 impl<V> CheckedSub for Position<V>
 where
-    V: CheckedSub<Output = V>,
+    V: BoardValue,
 {
     fn checked_sub(&self, rhs: &Self) -> Option<Self> {
         Some(Self {
@@ -167,7 +229,7 @@ where
 
 impl<V> AddAssign for Position<V>
 where
-    V: AddAssign,
+    V: BoardValue,
 {
     fn add_assign(&mut self, rhs: Self) {
         self.row += rhs.row;
@@ -177,21 +239,23 @@ where
 
 impl<V> Position<V>
 where
-    V: Copy,
-    usize: From<V>,
+    V: BoardValue,
 {
     /// The position encoded as an index into an board with the provided dimensions.
-    pub fn as_index(&self, dim: &Dimensions<V>) -> usize {
-        let row = usize::from(self.row);
-        let column = usize::from(self.column);
-        row * usize::from(dim.columns) + column
+    pub fn as_index(&self, dim: &Dimensions<V>) -> Option<usize> {
+        if self.row >= dim.rows || self.column >= dim.columns {
+            return None;
+        }
+        let row = self.row.into();
+        let column = self.column.into();
+        Some(row * dim.columns.into() + column)
     }
 }
 
 impl<V> Position<V>
 where
     Self: CheckedAdd<Output = Self> + CheckedSub<Output = Self>,
-    V: Zero,
+    V: BoardValue,
 {
     /// Get the position `by` units away from this position in the provided direction `dir`, or
     /// `None` if the position would be out of bounds.
@@ -212,10 +276,22 @@ impl<V> From<(V, V)> for Position<V> {
 }
 
 /// The dimensions of a parking game board in terms of rows and columns.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash, Deserialize, Serialize)]
 pub struct Dimensions<V> {
     rows: V,
     columns: V,
+}
+
+impl<V> Dimensions<V> {
+    /// The number of rows.
+    pub fn rows(&self) -> &V {
+        &self.rows
+    }
+
+    /// The number of columns.
+    pub fn columns(&self) -> &V {
+        &self.columns
+    }
 }
 
 /// An error associated with the creation of the dimensions.
@@ -237,7 +313,7 @@ impl Error for DimensionError {}
 
 impl<V> TryFrom<(V, V)> for Dimensions<V>
 where
-    V: CheckedMul + Zero,
+    V: BoardValue,
 {
     type Error = DimensionError;
 
@@ -256,10 +332,22 @@ where
 
 /// A state of the game. This is guaranteed to be a valid state as long as it is constructed with
 /// [`State::empty`] and manipulated with via [`Board`] operations.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, Deserialize, Serialize)]
 pub struct State<V> {
     dim: Dimensions<V>,
     cars: Vec<(Position<V>, Car<V>)>,
+}
+
+impl<V> State<V> {
+    /// The dimensions of this state.
+    pub fn dimensions(&self) -> &Dimensions<V> {
+        &self.dim
+    }
+
+    /// The cars contained within this state.
+    pub fn cars(&self) -> &[(Position<V>, Car<V>)] {
+        &self.cars
+    }
 }
 
 impl<V> State<V> {
@@ -291,7 +379,7 @@ pub struct InvalidStateError<V> {
 
 impl<V> Display for InvalidStateError<V>
 where
-    V: Display,
+    V: BoardValue,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self.variant {
@@ -307,7 +395,7 @@ where
     }
 }
 
-impl<V> Error for InvalidStateError<V> where V: Debug + Display {}
+impl<V> Error for InvalidStateError<V> where V: BoardValue {}
 
 fn add_car_concrete<V>(
     board: &mut [Option<NonZeroUsize>],
@@ -317,8 +405,7 @@ fn add_car_concrete<V>(
     car: &Car<V>,
 ) -> Result<(), InvalidStateError<V>>
 where
-    V: Copy + AddAssign + Zero + One + Unsigned,
-    usize: From<V>,
+    V: BoardValue,
 {
     let mut base = *position;
     let offset = match car.orientation {
@@ -331,8 +418,8 @@ where
             column: V::one(),
         },
     };
-    for _ in 0..usize::from(car.length) {
-        match board.get_mut(base.as_index(dim)) {
+    for _ in 0..car.length.into() {
+        match base.as_index(dim).and_then(|p| board.get_mut(p)) {
             None => {
                 return Err(InvalidStateError {
                     position: base,
@@ -351,8 +438,8 @@ where
         base += offset;
     }
     let mut base = *position;
-    for _ in 0..usize::from(car.length) {
-        board[base.as_index(dim)] = Some(idx);
+    for _ in 0..car.length.into() {
+        board[base.as_index(dim).unwrap()] = Some(idx);
         base += offset;
     }
     Ok(())
@@ -360,11 +447,10 @@ where
 
 impl<V> State<V>
 where
-    V: Copy + AddAssign + Zero + One + Unsigned,
-    usize: From<V>,
+    V: BoardValue,
 {
     fn concrete(&self) -> Result<Vec<Option<NonZeroUsize>>, InvalidStateError<V>> {
-        let mut board = vec![None; usize::from(self.dim.columns) * usize::from(self.dim.rows)];
+        let mut board = vec![None; self.dim.columns.into() * self.dim.rows.into()];
         for (idx, (position, car)) in self.cars.iter().enumerate() {
             add_car_concrete(
                 &mut board,
@@ -404,6 +490,15 @@ pub struct Board<R, V> {
     phantom: PhantomData<V>,
 }
 
+impl<R, V> Hash for Board<R, V>
+where
+    R: Hash,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.state.hash(state);
+    }
+}
+
 impl<R, V> Board<R, V> {
     /// The [`Vec`] which represents the board literally.
     pub fn concrete(&self) -> &Vec<Option<NonZeroUsize>> {
@@ -414,16 +509,36 @@ impl<R, V> Board<R, V> {
 impl<R, V> Board<R, V>
 where
     R: Deref<Target = State<V>>,
-    V: Copy,
-    usize: From<V>,
+    V: BoardValue,
 {
     /// Fetches the car index occupying the requested position. [`None`] if the position doesn't
     /// exist in the board, [`Some`]`(`[`None`]`)` if the position exists, but is empty, and
     /// [`Some`]`(`[`Some`]`(n))` with `n` as the car that occupies that position.
     pub fn get<P: Into<Position<V>>>(&self, position: P) -> Option<Option<NonZeroUsize>> {
-        self.concrete
-            .get(position.into().as_index(&self.state.dim))
-            .copied()
+        position
+            .into()
+            .as_index(&self.state.dim)
+            .and_then(|p| self.concrete.get(p).copied())
+    }
+}
+
+impl<R, V> Board<R, V>
+where
+    R: Deref<Target = State<V>>,
+{
+    /// Gets the current state of the board.
+    pub fn state(&self) -> &State<V> {
+        self.state.deref()
+    }
+}
+
+impl<R, V> Board<R, V>
+where
+    R: DerefMut<Target = State<V>>,
+{
+    /// Gets the current state of the board, mutably.
+    pub fn state_mut(&mut self) -> &mut State<V> {
+        self.state.deref_mut()
     }
 }
 
@@ -451,7 +566,7 @@ pub struct InvalidMoveError<V> {
 
 impl<V> Display for InvalidMoveError<V>
 where
-    V: Display,
+    V: BoardValue,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match &self.variant {
@@ -463,13 +578,12 @@ where
     }
 }
 
-impl<V> Error for InvalidMoveError<V> where V: Debug + Display {}
+impl<V> Error for InvalidMoveError<V> where V: BoardValue {}
 
 impl<R, V> Board<R, V>
 where
     R: DerefMut<Target = State<V>>,
-    V: Copy + AddAssign + Zero + One + Unsigned,
-    usize: From<V>,
+    V: BoardValue,
 {
     /// Add a car to the board, updating the backing state in the process.
     pub fn add_car<P: Into<Position<V>>>(
@@ -488,8 +602,7 @@ where
 impl<R, V> Board<R, V>
 where
     R: DerefMut<Target = State<V>>,
-    V: Copy + CheckedAdd + CheckedSub + Zero + One + Unsigned,
-    usize: From<V>,
+    V: BoardValue,
 {
     /// Shift a provided car one space in the designated direction.
     pub fn shift_car(
@@ -518,8 +631,22 @@ where
                 }
             };
             if let (Some(deleted_pos), Some(inserted_pos)) = (deleted, inserted) {
-                let deleted = deleted_pos.as_index(&self.state.dim);
-                let inserted = inserted_pos.as_index(&self.state.dim);
+                let deleted =
+                    deleted_pos
+                        .as_index(&self.state.dim)
+                        .ok_or_else(|| InvalidMoveError {
+                            car,
+                            dir,
+                            variant: InvalidMoveType::InvalidFinalPosition,
+                        })?;
+                let inserted =
+                    inserted_pos
+                        .as_index(&self.state.dim)
+                        .ok_or_else(|| InvalidMoveError {
+                            car,
+                            dir,
+                            variant: InvalidMoveType::InvalidFinalPosition,
+                        })?;
                 if let Ok([deleted, inserted]) = self.concrete.get_disjoint_mut([deleted, inserted])
                 {
                     return if let Some(idx) = inserted {
@@ -554,8 +681,7 @@ where
 impl<R, V> Display for Board<R, V>
 where
     R: Deref<Target = State<V>>,
-    V: Copy,
-    usize: From<V>,
+    V: BoardValue,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let num_width = (self.state.cars.len().saturating_sub(1).max(1).ilog10() + 2)
@@ -563,11 +689,11 @@ where
             - 1;
         let side = num_width + 2;
         let mut indices = self.concrete.iter().copied();
-        for _row in 0..usize::from(self.state.dim.rows) {
+        for _row in 0..self.state.dim.rows.into() {
             for _padding in 0..(side / 2) {
-                writeln!(f, "{:#>1$}", "", usize::from(self.state.dim.columns) * side)?;
+                writeln!(f, "{:#>1$}", "", self.state.dim.columns.into() * side)?;
             }
-            for _column in 0..usize::from(self.state.dim.columns) {
+            for _column in 0..self.state.dim.columns.into() {
                 write!(f, "#")?;
                 if let Some(idx) = indices.next().unwrap() {
                     write!(f, "{idx:0num_width$}")?;
@@ -578,7 +704,7 @@ where
             }
             writeln!(f)?;
             for _padding in 0..(side / 2) {
-                writeln!(f, "{:#>1$}", "", usize::from(self.state.dim.columns) * side)?;
+                writeln!(f, "{:#>1$}", "", self.state.dim.columns.into() * side)?;
             }
         }
         Ok(())

@@ -1,6 +1,6 @@
 [package]
 name = "parking-game"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "EUPL-1.2"
 
@@ -11,6 +11,7 @@ repository = "https://github.com/addisoncrump/parking-game"
 
 [dependencies]
 num-traits = "0.2"
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 
 [lints.rust]
 missing-docs = "warn"
