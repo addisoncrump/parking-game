@@ -634,7 +634,7 @@ where
                 let deleted =
                     deleted_pos
                         .as_index(&self.state.dim)
-                        .ok_or_else(|| InvalidMoveError {
+                        .ok_or(InvalidMoveError {
                             car,
                             dir,
                             variant: InvalidMoveType::InvalidFinalPosition,
@@ -642,7 +642,7 @@ where
                 let inserted =
                     inserted_pos
                         .as_index(&self.state.dim)
-                        .ok_or_else(|| InvalidMoveError {
+                        .ok_or(InvalidMoveError {
                             car,
                             dir,
                             variant: InvalidMoveType::InvalidFinalPosition,
