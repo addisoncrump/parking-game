@@ -631,22 +631,20 @@ where
                 }
             };
             if let (Some(deleted_pos), Some(inserted_pos)) = (deleted, inserted) {
-                let deleted =
-                    deleted_pos
-                        .as_index(&self.state.dim)
-                        .ok_or(InvalidMoveError {
-                            car,
-                            dir,
-                            variant: InvalidMoveType::InvalidFinalPosition,
-                        })?;
-                let inserted =
-                    inserted_pos
-                        .as_index(&self.state.dim)
-                        .ok_or(InvalidMoveError {
-                            car,
-                            dir,
-                            variant: InvalidMoveType::InvalidFinalPosition,
-                        })?;
+                let deleted = deleted_pos
+                    .as_index(&self.state.dim)
+                    .ok_or(InvalidMoveError {
+                        car,
+                        dir,
+                        variant: InvalidMoveType::InvalidFinalPosition,
+                    })?;
+                let inserted = inserted_pos
+                    .as_index(&self.state.dim)
+                    .ok_or(InvalidMoveError {
+                        car,
+                        dir,
+                        variant: InvalidMoveType::InvalidFinalPosition,
+                    })?;
                 if let Ok([deleted, inserted]) = self.concrete.get_disjoint_mut([deleted, inserted])
                 {
                     return if let Some(idx) = inserted {
